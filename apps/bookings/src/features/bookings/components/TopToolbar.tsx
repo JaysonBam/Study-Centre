@@ -8,6 +8,7 @@ import {
   Schedule as ScheduleIcon,
 } from '@mui/icons-material';
 import { DateInput } from '@/shared/ui/DateInput';
+import { activateLightsaber } from '@/shared/lib/lightsaber';
 
 interface TopToolbarProps {
   selectedDate: Date;
@@ -51,6 +52,20 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
     if (onUserChange && localUser !== currentUser) {
       onUserChange(localUser);
     }
+  };
+
+  const handleUserKeyDown = (event: React.KeyboardEvent) => {
+    if (
+      event.key !== 'Enter' ||
+      event.nativeEvent.isComposing ||
+      event.repeat ||
+      !activateLightsaber(localUser)
+    )
+      return;
+    event.preventDefault();
+    event.stopPropagation();
+    setLocalUser('');
+    onUserChange?.('');
   };
 
   return (
@@ -135,6 +150,7 @@ export const TopToolbar: React.FC<TopToolbarProps> = ({
             value={localUser}
             onChange={(e) => setLocalUser(e.target.value)}
             onBlur={handleUserBlur}
+            onKeyDown={handleUserKeyDown}
             sx={{ width: { xs: 150, sm: 200 }, bgcolor: 'background.paper', borderRadius: 1 }}
           />
         )}
