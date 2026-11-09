@@ -1,0 +1,642 @@
+import { useEffect, useState } from 'react';
+import { Link, useLocation, useNavigate, useOutletContext, useParams } from 'react-router-dom';
+import { Button } from '@/shared/ui/Button';
+import { Card } from '@/shared/ui/Card';
+import { SidePanel } from '@/shared/ui/SidePanel';
+import { PrintLocationBadge } from '@/shared/ui/PrintLocationBadge';
+import { useFeedback } from '@/shared/context/FeedbackProvider';
+import { StateBadge } from '@/features/workflow/components/StateBadge';
+import { CheckpointNew } from '@/features/workflow/components/CheckpointNew';
+import { CheckpointReview } from '@/features/workflow/components/CheckpointReview';
+import { CheckpointConfirmation } from '@/features/workflow/components/CheckpointConfirmation';
+import { CheckpointPrinting } from '@/features/workflow/components/CheckpointPrinting';
+import { CheckpointCollection } from '@/features/workflow/components/CheckpointCollection';
+import { useProjects } from '@/features/projects/context/ProjectContext';
+import { useStaffSession } from '@/features/auth/context/StaffSessionContext';
+import { useSettings } from '@/features/settings/context/SettingsContext';
+import { getRecentProjectAuditEvents } from '@/api/auditEvents';
+import type { Project } from '@/api/projectTypes';
+import {
+  getNextAction,
+  getPartCounts,
+  getProjectBlockers,
+  type WorkspaceTab,
+} from '@/features/workflow/model/operations';
+import type { ProjectWorkspaceNavigationContext } from '@/app/layout/Layout';
+import { LocalFilesCard } from '@/features/local-files/components/LocalFilesCard';
+import { ProjectCorrespondencePanel } from '@/features/gmail/components/ProjectCorrespondencePanel';
+import { ProjectNotesPanel } from '@/features/projects/components/ProjectNotesPanel';
+import { getGmailInboxState } from '@/features/gmail/state/gmailInboxStore';
+import { ArrowLeft, Archive, History, Mail, NotebookPen, Trash2 } from 'lucide-react';
+
+export const ProjectTimeline = () => {
+  const { id } = useParams<{ id: string }>();
+  const navigate = useNavigate();
+  const location = useLocation();
+  const { confirm, notify } = useFeedback();
+  const {
+    deleteProject,
+    getProject,
+    projectsLoading,
+    projectsLoadError,
+    updateProject,
+    transitionProjectState,
+  } = useProjects();
+  const { activeStaffName, claimActiveStaffName } = useStaffSession();
+  const { settingsLoading, settingsLoadError } = useSettings();
+  const { activeWorkspaceTab, selectWorkspaceTab } = useOutletContext<ProjectWorkspaceNavigationContext>();
+  const project = getProject(id || '');
+  const autoCreateLocalFolder =
+    (location.state as { autoCreateLocalFolderFor?: string } | null)?.autoCreateLocalFolderFor ===
+    project?.id;
+  const [openPanel, setOpenPanel] = useState<'timeline' | 'messages' | 'notes' | null>(null);
+  const [deletingProject, setDeletingProject] = useState(false);
+  const [archivingProject, setArchivingProject] = useState(false);
+  const staffName = activeStaffName || claimActiveStaffName() || 'System';
+  const activeTab = project ? activeWorkspaceTab : 'overview';
+  const selectTab = (tab: WorkspaceTab) => {
+    if (project) selectWorkspaceTab(tab);
+  };
+  const handleDeleteProject = async () => {
+    if (!project || deletingProject) return;
+
+    const shouldDelete = await confirm({
+      title: 'Delete project?',
+      message: `This will permanently delete ${project.studentName || 'this project'}, all parts, print runs, and issued quote snapshots.`,
+      messages: [
+        `Project code: ${project.id}`,
+        `Parts to remove: ${project.parts.length}`,
+        'Stored part thumbnails will also be removed when available.',
+        'This action cannot be undone.',
+      ],
+      tone: 'error',
+      confirmLabel: 'Delete project',
+      cancelLabel: 'Keep project',
+    });
+
+    if (!shouldDelete) return;
+
+    setDeletingProject(true);
+    const deleted = await deleteProject(project.id);
+    setDeletingProject(false);
+
+    if (deleted) {
+      notify({
+        title: 'Project deleted',
+        message: `Project ${project.id} and its dependencies were removed.`,
+        tone: 'success',
+      });
+      navigate('/', { replace: true });
+    } else {
+      notify({
+        title: 'Delete failed',
+        message: `Project ${project.id} could not be deleted. Please try again.`,
+        tone: 'error',
+      });
+    }
+  };
+
+  const handleToggleArchive = async () => {
+    if (!project || archivingProject) return;
+
+    const isReviving = project.archived || project.state === 'CANCELLED';
+    const shouldToggle = await confirm({
+      title: isReviving ? 'Revive project?' : 'Cancel / archive project?',
+      message: isReviving
+        ? `This will bring ${project.studentName || 'this project'} back into the active workspace.`
+        : `This will mark ${project.studentName || 'this project'} as cancelled and archived.`,
+      messages: isReviving
+        ? [`Project code: ${project.id}`, 'The project will return to the active workspace.']
+        : [
+            `Project code: ${project.id}`,
+            'The project will be hidden from active workflow views.',
+            'You can revive it later if needed.',
+          ],
+      tone: 'warning',
+      confirmLabel: isReviving ? 'Revive project' : 'Cancel / archive',
+      cancelLabel: 'Keep project',
+    });
+
+    if (!shouldToggle) return;
+
+    setArchivingProject(true);
+    const result = await transitionProjectState({
+      projectId: project.id,
+      action: isReviving ? 'REOPEN_REVIEW' : 'CANCEL_PROJECT',
+      technicianName: staffName,
+    });
+    setArchivingProject(false);
+
+    if (!result.ok) {
+      notify({
+        title: isReviving ? 'Revive failed' : 'Archive failed',
+        message: result.errors[0] || 'The project could not be updated.',
+        tone: 'error',
+      });
+      return;
+    }
+
+    updateProject(project.id, { archived: !isReviving });
+
+    notify({
+      title: isReviving ? 'Project revived' : 'Project archived',
+      message: isReviving
+        ? `Project ${project.id} is back in the active workspace.`
+        : `Project ${project.id} was marked cancelled and archived.`,
+      tone: 'success',
+    });
+  };
+
+  if (settingsLoading) {
+    return <ProjectTimelineSkeleton />;
+  }
+
+  if (settingsLoadError) {
+    return (
+      <div className="w-full rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-100 dark:bg-rose-950/55 p-10 text-center shadow-sm">
+        <h1 className="text-xl font-black text-rose-950 dark:text-rose-200">Settings could not be loaded</h1>
+        <p className="mt-2 text-sm font-semibold text-rose-800 dark:text-rose-200">{settingsLoadError}</p>
+        <Link to="/" className="mt-5 inline-flex">
+          <Button variant="outline" className="gap-2 bg-white dark:bg-[var(--forge-panel)]">
+            <ArrowLeft size={16} /> Back to Main Dashboard
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  if (id === 'new') {
+    const threadId = (location.state as { gmailThreadId?: string } | null)?.gmailThreadId;
+    const initialGmailThread = getGmailInboxState().items.find((item) => item.threadId === threadId);
+    return (
+      <div className="w-full">
+        <CheckpointNew key={threadId || 'new'} initialGmailThread={initialGmailThread} />
+      </div>
+    );
+  }
+
+  if (!project) {
+    if (projectsLoading) {
+      return <ProjectTimelineSkeleton />;
+    }
+
+    return (
+      <div className="forge-panel w-full p-10 text-center">
+        <h1 className="text-xl font-black text-slate-950 dark:text-slate-100">
+          {projectsLoadError ? 'Projects could not be loaded' : 'Project not found'}
+        </h1>
+        <p className="mt-2 text-sm text-slate-500 dark:text-slate-400">
+          {projectsLoadError ||
+            'The project code may have been removed or is not available in this workspace.'}
+        </p>
+        <Link to="/" className="mt-5 inline-flex">
+          <Button variant="outline" className="gap-2">
+            <ArrowLeft size={16} /> Back to Main Dashboard
+          </Button>
+        </Link>
+      </div>
+    );
+  }
+
+  return (
+    <div className="project-detail-shell w-full">
+      <aside className="project-summary-rail print:hidden" aria-label="Current project summary">
+        <div className="project-summary-main min-w-0">
+          <div className="project-summary-static min-w-0">
+            <div className="flex items-start gap-3">
+              <StateBadge state={project.state} />
+              <div className="min-w-0 flex-1">
+                <p className="project-summary-label">Next Action</p>
+                <p className="project-summary-action">{getNextAction(project)}</p>
+              </div>
+            </div>
+
+            <div className="project-summary-divider" />
+
+            <div className="space-y-1.5">
+              <div className="project-summary-row">
+                <p className="project-summary-label">Priority</p>
+                <div className="flex min-w-0 items-center justify-end gap-2">
+                  <PrintLocationBadge label={project.printLabel} className="max-w-36" />
+                  <p className="project-summary-priority shrink-0">#{project.priorityNumber}</p>
+                </div>
+              </div>
+
+              <div className="project-summary-row">
+                <p className="project-summary-label">Project ID</p>
+                <p className="project-summary-value font-mono">{project.id}</p>
+              </div>
+
+              <div className="project-summary-row">
+                <p className="project-summary-label">Name</p>
+                <p className="project-summary-value">{project.studentName || 'Unnamed Project'}</p>
+              </div>
+
+              <div className="project-summary-row">
+                <p className="project-summary-label">Module Code</p>
+                <p className="project-summary-value">{project.course || 'Not set'}</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="project-summary-local-files">
+            <LocalFilesCard project={project} autoCreateIfMissing={autoCreateLocalFolder} />
+          </div>
+        </div>
+
+        <div className="grid grid-cols-3 gap-1">
+          {(
+            [
+              { id: 'timeline', label: 'Timeline', icon: History },
+              { id: 'messages', label: 'Messages', icon: Mail },
+              { id: 'notes', label: 'Notes', icon: NotebookPen },
+            ] as const
+          ).map(({ id: panelId, label, icon: Icon }) => (
+            <Button
+              key={panelId}
+              variant="outline"
+              size="sm"
+              className="relative min-w-0 w-full justify-center gap-1 px-1"
+              title={label}
+              aria-haspopup="dialog"
+              aria-expanded={openPanel === panelId}
+              onClick={() => setOpenPanel(panelId)}
+            >
+              <Icon size={14} className="shrink-0" aria-hidden="true" /> {label}
+              {panelId === 'notes' && project.notes?.trim() && (
+                <span
+                  className="absolute right-1 top-1 size-2 rounded-full bg-red-500"
+                  role="img"
+                  aria-label="Has notes"
+                />
+              )}
+            </Button>
+          ))}
+        </div>
+      </aside>
+
+      <div className="min-w-0 print:block">
+        <div className="min-w-0">
+          {activeTab === 'overview' && (
+            <OverviewTab
+              project={project}
+              deletingProject={deletingProject}
+              archivingProject={archivingProject}
+              onDeleteProject={handleDeleteProject}
+              onToggleArchive={handleToggleArchive}
+            />
+          )}
+          {activeTab === 'parts' && (
+            <CheckpointReview project={project} onAdvanceFromLockedReview={() => selectTab('quote')} />
+          )}
+          {activeTab === 'quote' && (
+            <CheckpointConfirmation project={project} onAdvanceToProduction={() => selectTab('production')} />
+          )}
+          {activeTab === 'production' && (
+            <CheckpointPrinting project={project} onAdvanceToCollection={() => selectTab('collection')} />
+          )}
+          {activeTab === 'collection' && (
+            <CheckpointCollection project={project} onReturnToProduction={() => selectTab('production')} />
+          )}
+        </div>
+      </div>
+
+      {openPanel === 'timeline' && (
+        <SidePanel
+          title="Project timeline"
+          subtitle={`${project.id} · ${project.studentName}`}
+          icon={History}
+          onClose={() => setOpenPanel(null)}
+          closeLabel="Close timeline"
+        >
+          <div className="min-h-0 flex-1 overflow-y-auto p-5">
+            <AuditTab projectId={project.id} />
+          </div>
+        </SidePanel>
+      )}
+      {openPanel === 'notes' && (
+        <ProjectNotesPanel key={`notes-${project.id}`} project={project} onClose={() => setOpenPanel(null)} />
+      )}
+      <ProjectCorrespondencePanel
+        key={project.id}
+        project={project}
+        open={openPanel === 'messages'}
+        onClose={() => setOpenPanel(null)}
+        onProjectSynced={(updates) => updateProject(project.id, updates)}
+      />
+    </div>
+  );
+};
+
+const SkeletonBar = ({ className = '' }: { className?: string }) => (
+  <div className={`forge-skeleton rounded ${className}`} />
+);
+
+const ProjectTimelineSkeleton = () => (
+  <div className="project-detail-shell w-full">
+    <aside className="project-summary-rail print:hidden">
+      <div className="min-w-0">
+        <SkeletonBar className="h-6 w-24 rounded-full" />
+        <SkeletonBar className="mt-4 h-3 w-20" />
+        <SkeletonBar className="mt-2 h-9 w-full" />
+        <div className="project-summary-divider" />
+        {Array.from({ length: 6 }).map((_, index) => (
+          <div key={index} className="mb-3">
+            <SkeletonBar className="h-3 w-20" />
+            <SkeletonBar className="mt-2 h-5 w-full" />
+          </div>
+        ))}
+      </div>
+      <div className="space-y-2">
+        <SkeletonBar className="h-4 w-20" />
+        <SkeletonBar className="h-9 w-full" />
+      </div>
+    </aside>
+
+    <div className="min-w-0">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="space-y-5">
+          <Card className="p-5">
+            <SkeletonBar className="h-5 w-40" />
+            <SkeletonBar className="mt-4 h-10 w-full" />
+            <SkeletonBar className="mt-3 h-10 w-full" />
+            <SkeletonBar className="mt-3 h-10 w-2/3" />
+          </Card>
+          <Card className="p-5">
+            <SkeletonBar className="h-5 w-36" />
+            <div className="mt-5 grid gap-3 sm:grid-cols-4">
+              {Array.from({ length: 4 }).map((_, index) => (
+                <div key={index} className="forge-panel-muted p-3">
+                  <SkeletonBar className="h-3 w-20" />
+                  <SkeletonBar className="mt-3 h-7 w-14" />
+                  <SkeletonBar className="mt-2 h-3 w-24" />
+                </div>
+              ))}
+            </div>
+          </Card>
+        </div>
+        <aside className="space-y-5">
+          <Card className="p-5">
+            <SkeletonBar className="h-3 w-20" />
+            <SkeletonBar className="mt-3 h-6 w-48" />
+            <SkeletonBar className="mt-4 h-9 w-full" />
+            <SkeletonBar className="mt-2 h-9 w-full" />
+          </Card>
+          <Card className="p-5">
+            <SkeletonBar className="h-3 w-28" />
+            <SkeletonBar className="mt-3 h-4 w-full" />
+            <SkeletonBar className="mt-4 h-9 w-full" />
+          </Card>
+        </aside>
+      </div>
+    </div>
+  </div>
+);
+
+const WorkspaceMetric = ({ label, value, detail }: { label: string; value: string; detail: string }) => (
+  <div className="forge-metric p-3">
+    <p className="text-xs font-bold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-400">
+      {label}
+    </p>
+    <p className="mt-1 text-xl font-black text-slate-950 dark:text-slate-100">{value}</p>
+    <p className="mt-1 truncate text-xs font-semibold text-slate-600 dark:text-slate-400">{detail}</p>
+  </div>
+);
+
+const OverviewTab = ({
+  project,
+  deletingProject,
+  archivingProject,
+  onDeleteProject,
+  onToggleArchive,
+}: {
+  project: Project;
+  deletingProject: boolean;
+  archivingProject: boolean;
+  onDeleteProject: () => Promise<void>;
+  onToggleArchive: () => Promise<void>;
+}) => {
+  const blockers = getProjectBlockers(project);
+  const counts = getPartCounts(project);
+  const isArchivedOrCancelled = project.archived || project.state === 'CANCELLED';
+
+  return (
+    <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="space-y-5">
+        <CheckpointNew project={project} />
+      </div>
+
+      <aside className="space-y-5">
+        <Card className="p-5">
+          <div>
+            <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">
+              Progress
+            </p>
+            <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-slate-100">
+              Parts and production
+            </h2>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2 xl:grid-cols-2">
+            <WorkspaceMetric
+              label="Verified"
+              value={`${counts.verified}/${counts.total}`}
+              detail="reviewed parts"
+            />
+            <WorkspaceMetric label="Ready" value={`${counts.ready}`} detail="print queue" />
+            <WorkspaceMetric label="Printing" value={`${counts.printing}`} detail="active now" />
+            <WorkspaceMetric label="Collected" value={`${counts.collected}`} detail="handed over" />
+          </div>
+        </Card>
+
+        <Card className="p-5">
+          <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-600 dark:text-slate-400">
+            Project blockers
+          </p>
+          <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-400">
+            Issues that currently prevent this project from moving to the next stage.
+          </p>
+          <div className="mt-3 space-y-2">
+            {blockers.length === 0 ? (
+              <div className="rounded-md border border-emerald-300 dark:border-emerald-800 bg-emerald-100 dark:bg-emerald-950/55 px-3 py-2 text-sm font-bold text-emerald-900 dark:text-emerald-200">
+                Clear
+              </div>
+            ) : (
+              blockers.map((blocker) => (
+                <div
+                  key={blocker}
+                  className="rounded-md border border-rose-300 dark:border-rose-800 bg-rose-100 dark:bg-rose-950/55 px-3 py-2 text-sm font-bold text-rose-900 dark:text-rose-200"
+                >
+                  {blocker}
+                </div>
+              ))
+            )}
+          </div>
+        </Card>
+
+        <Card className="border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950/40 p-4 print:hidden">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-xs font-black uppercase tracking-[0.14em] text-orange-700 dark:text-orange-300">
+                {isArchivedOrCancelled ? 'Revive project' : 'Archive project'}
+              </p>
+              <p className="mt-1 text-sm text-orange-950 dark:text-orange-200">
+                {isArchivedOrCancelled
+                  ? 'Return this project to the active workspace.'
+                  : 'Archived projects can be revived later.'}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="w-auto gap-2 whitespace-nowrap self-start border-orange-300 dark:border-orange-800 text-orange-800 dark:text-orange-200 hover:bg-orange-100 dark:hover:bg-orange-950/55 sm:self-center"
+              onClick={() => void onToggleArchive()}
+              loading={archivingProject}
+              loadingText={isArchivedOrCancelled ? 'Reviving…' : 'Archiving…'}
+            >
+              <Archive size={16} />
+              {isArchivedOrCancelled ? 'Revive project' : 'Archive project'}
+            </Button>
+          </div>
+        </Card>
+
+        <DeleteProjectCard project={project} deleting={deletingProject} onDelete={onDeleteProject} />
+      </aside>
+    </div>
+  );
+};
+
+type AuditEvent = {
+  id: number;
+  created_at: string;
+  technician_name: string;
+  action_type: string;
+  from_project_state?: string | null;
+  to_project_state?: string | null;
+  from_part_status?: string | null;
+  to_part_status?: string | null;
+  reason?: string | null;
+  override_note?: string | null;
+};
+
+const AuditTab = ({ projectId }: { projectId: string }) => {
+  const [events, setEvents] = useState<AuditEvent[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadEvents = async () => {
+      setLoading(true);
+      setError(null);
+      const { data, error: auditError } = await getRecentProjectAuditEvents(projectId);
+
+      if (!mounted) return;
+      if (auditError) {
+        setError(auditError.message);
+        setEvents([]);
+      } else {
+        setEvents((data || []) as AuditEvent[]);
+      }
+      setLoading(false);
+    };
+
+    loadEvents();
+    return () => {
+      mounted = false;
+    };
+  }, [projectId]);
+
+  return (
+    <Card className="p-5">
+      <div>
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-slate-600 dark:text-slate-400">
+          Project Timeline
+        </p>
+        <h2 className="mt-1 text-xl font-black text-slate-950 dark:text-slate-100">
+          Recent project activity
+        </h2>
+      </div>
+
+      {loading && (
+        <div className="forge-panel-muted mt-5 p-4 text-sm font-semibold text-slate-700 dark:text-slate-300">
+          Loading audit events...
+        </div>
+      )}
+      {error && (
+        <div className="mt-5 rounded-md border border-rose-300 dark:border-rose-800 bg-rose-100 dark:bg-rose-950/55 p-4 text-sm font-bold text-rose-900 dark:text-rose-200">
+          {error}
+        </div>
+      )}
+      {!loading && !error && events.length === 0 && (
+        <div className="forge-panel-muted mt-5 p-4 text-sm font-semibold text-slate-700 dark:text-slate-300">
+          No audit events recorded yet.
+        </div>
+      )}
+
+      <div className="mt-5 space-y-2">
+        {events.map((event) => (
+          <div key={event.id} className="rounded-md border border-slate-300 dark:border-slate-700 p-3 pl-4">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="text-sm font-black text-slate-950 dark:text-slate-100">
+                  {event.action_type.replaceAll('_', ' ')}
+                </p>
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  {event.technician_name} - {new Date(event.created_at).toLocaleString()}
+                </p>
+              </div>
+              {(event.to_project_state || event.to_part_status) && (
+                <span className="forge-pill px-2.5 py-1 text-xs text-slate-700 dark:text-slate-300">
+                  {event.from_project_state || event.from_part_status || 'N/A'} -&gt;{' '}
+                  {event.to_project_state || event.to_part_status}
+                </span>
+              )}
+            </div>
+            {(event.reason || event.override_note) && (
+              <p className="mt-2 rounded border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 px-3 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300">
+                {event.reason || event.override_note}
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+};
+
+const DeleteProjectCard = ({
+  project,
+  deleting,
+  onDelete,
+}: {
+  project: Project;
+  deleting: boolean;
+  onDelete: () => Promise<void>;
+}) => (
+  <Card className="border-rose-200 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40 p-4 print:hidden">
+    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+      <div>
+        <p className="text-xs font-black uppercase tracking-[0.14em] text-rose-700 dark:text-rose-300">
+          Delete project
+        </p>
+        <p className="mt-1 text-sm text-rose-900 dark:text-rose-200">
+          Deletes <span className="font-mono">{project.id}</span> and its {project.parts.length} part
+          {project.parts.length === 1 ? '' : 's'}.
+        </p>
+      </div>
+      <Button
+        variant="destructive"
+        size="sm"
+        className="gap-2 self-start sm:self-center"
+        onClick={() => void onDelete()}
+        loading={deleting}
+        loadingText="Deleting Project…"
+      >
+        <Trash2 size={16} />
+        Delete project
+      </Button>
+    </div>
+  </Card>
+);

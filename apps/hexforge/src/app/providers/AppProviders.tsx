@@ -1,0 +1,30 @@
+import { BrowserRouter } from 'react-router-dom';
+import type { ReactNode } from 'react';
+import { FeedbackProvider } from '@/shared/context/FeedbackProvider';
+import { ProjectProvider } from '@/features/projects/context/ProjectContext';
+import { SettingsProvider } from '@/features/settings/context/SettingsContext';
+import { StaffSessionProvider } from '@/features/auth/context/StaffSessionContext';
+import { LocalHelperProvider } from '@/features/local-files/context/LocalHelperContext';
+import { ThemeProvider } from '@/shared/context/ThemeProvider';
+
+export function AppProviders({ children }: { children: ReactNode }) {
+  return (
+    <ThemeProvider>
+      <BrowserRouter>
+        <FeedbackProvider>{children}</FeedbackProvider>
+      </BrowserRouter>
+    </ThemeProvider>
+  );
+}
+
+export function WorkspaceProviders({ children }: { children: ReactNode }) {
+  return (
+    <LocalHelperProvider>
+      <ProjectProvider>
+        <SettingsProvider>
+          <StaffSessionProvider>{children}</StaffSessionProvider>
+        </SettingsProvider>
+      </ProjectProvider>
+    </LocalHelperProvider>
+  );
+}

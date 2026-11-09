@@ -1,0 +1,217 @@
+{
+  "availability": [],
+  "bookings": [
+    {
+      "file": "src/features/auth/components/styles.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/components/BookingCell.tsx",
+      "rule": "@typescript-eslint/no-unused-vars",
+      "message": "'e' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/components/BookingGrid.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 6
+    },
+    {
+      "file": "src/features/bookings/components/BookingGrid.tsx",
+      "rule": "@typescript-eslint/no-unused-vars",
+      "message": "'err' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/components/BookingGrid.tsx",
+      "rule": "@typescript-eslint/no-unused-vars",
+      "message": "'e' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/components/BookingGrid.tsx",
+      "rule": "no-empty",
+      "message": "Empty block statement.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/components/BookingPanel.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/features/bookings/components/SearchPanel.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/context/ConfirmDialogContext.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 5
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingActions.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 11
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingActions.tsx",
+      "rule": "@typescript-eslint/no-unused-vars",
+      "message": "'e' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingActions.tsx",
+      "rule": "no-empty",
+      "message": "Empty block statement.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingActions.tsx",
+      "rule": "prefer-const",
+      "message": "'uuid' is never reassigned. Use 'const' instead.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingActions.tsx",
+      "rule": "prefer-const",
+      "message": "'extendedEnd' is never reassigned. Use 'const' instead.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingDraft.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 8
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingDraft.tsx",
+      "rule": "@typescript-eslint/no-unused-vars",
+      "message": "'e' is defined but never used.",
+      "severity": 2,
+      "count": 3
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingDraft.tsx",
+      "rule": "no-empty",
+      "message": "Empty block statement.",
+      "severity": 2,
+      "count": 3
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingSchedule.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 8
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingSchedule.tsx",
+      "rule": "@typescript-eslint/no-unused-vars",
+      "message": "'e' is defined but never used.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/hooks/useBookingSchedule.tsx",
+      "rule": "no-empty",
+      "message": "Empty block statement.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/model/helpers.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/bookings/types.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 3
+    },
+    {
+      "file": "src/features/feedback/components/FeedbackScreen.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/reports/hooks/useBookingReports.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 5
+    },
+    {
+      "file": "src/features/reports/hooks/useBookingReports.tsx",
+      "rule": "no-control-regex",
+      "message": "Unexpected control character(s) in regular expression: \\x00, \\x08, \\x0b, \\x0c, \\x0e, \\x1f.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/settings/components/SettingsFields.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/features/settings/hooks/useSettingsEditor.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 5
+    },
+    {
+      "file": "src/main.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 2
+    },
+    {
+      "file": "src/shared/context/ThemeContext.tsx",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    },
+    {
+      "file": "src/shared/lib/bookingTime.ts",
+      "rule": "@typescript-eslint/no-explicit-any",
+      "message": "Unexpected any. Specify a different type.",
+      "severity": 2,
+      "count": 1
+    }
+  ],
+  "hexforge": [],
+  "printing-status": []
+}

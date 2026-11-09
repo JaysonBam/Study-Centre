@@ -1,0 +1,144 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { classifyGmailProxyRequest } from '../../../../services/printing/supabase/functions/_shared/gmailProxyPolicy.ts';
+
+const testDirectory = path.dirname(fileURLToPath(import.meta.url));
+const repositoryRoot = path.resolve(testDirectory, '../../../..');
+const read = (relativePath: string) =>
+  fs.readFileSync(path.join(repositoryRoot, relativePath), 'utf8');
+
+test('Gmail proxy permits only the operations used by HexForge', () => {
+  assert.equal(classifyGmailProxyRequest('/profile', 'GET')?.operation, 'gmail_read');
+  assert.equal(classifyGmailProxyRequest('/history?startHistoryId=123&maxResults=500&pageToken=next_1', 'GET')?.operation, 'gmail_read');
+  assert.equal(classifyGmailProxyRequest('/threads/thread_1?format=full', 'GET')?.operation, 'gmail_read');
+  assert.equal(classifyGmailProxyRequest('/threads?maxResults=50&q=3d%20print', 'GET')?.operation, 'gmail_read');
+  assert.equal(
+    classifyGmailProxyRequest('/messages?maxResults=100&q=is%3Aunread&pageToken=next_1', 'GET')?.operation,
+    'gmail_read'
+  );
+  assert.equal(
+    classifyGmailProxyRequest('/messages/message_1?format=metadata&metadataHeaders=Subject&metadataHeaders=Date', 'GET')?.operation,
+    'gmail_read'
+  );
+  assert.equal(
+    classifyGmailProxyRequest('/messages/message_1/attachments/attachment_1', 'GET')?.operation,
+    'gmail_attachment'
+  );
+  assert.equal(classifyGmailProxyRequest('/drafts', 'POST')?.operation, 'gmail_write');
+  assert.equal(classifyGmailProxyRequest('/messages/send', 'POST')?.operation, 'gmail_write');
+});
+
+test('Gmail proxy rejects arbitrary hosts, paths, methods, parameters, and oversized queries', () => {
+  assert.equal(classifyGmailProxyRequest('//attacker.example/token', 'GET'), null);
+  assert.equal(classifyGmailProxyRequest('https://attacker.example/token', 'GET'), null);
+  assert.equal(classifyGmailProxyRequest('/settings/forwardingAddresses', 'GET'), null);
+  assert.equal(classifyGmailProxyRequest('/profile', 'POST'), null);
+  assert.equal(classifyGmailProxyRequest('/history?startHistoryId=123&maxResults=501', 'GET'), null);
+  assert.equal(classifyGmailProxyRequest('/history?startHistoryId=invalid&maxResults=500', 'GET'), null);
+  assert.equal(classifyGmailProxyRequest('/history?startHistoryId=123&maxResults=500&access_token=secret', 'GET'), null);
+  assert.equal(classifyGmailProxyRequest('/threads?maxResults=101&q=3d%20print', 'GET'), null);
+  assert.equal(classifyGmailProxyRequest('/threads?maxResults=50&q=x&access_token=secret', 'GET'), null);
+  assert.equal(classifyGmailProxyRequest('/threads?maxResults=50&q=x', 'POST'), null);
+  assert.equal(classifyGmailProxyRequest('/messages?maxResults=100&q=x&access_token=secret', 'GET'), null);
+  assert.equal(classifyGmailProxyRequest(`/messages?maxResults=100&q=${'x'.repeat(1501)}`, 'GET'), null);
+  assert.equal(classifyGmailProxyRequest('/messages/a/attachments/../../profile', 'GET'), null);
+});
+
+test('Spam inclusion accepts one boolean only on thread listing and retains old request support', () => {
+  const request = '/threads?maxResults=50&q=print%20-in%3Atrash';
+  for (const option of ['', '&includeSpamTrash=true', '&includeSpamTrash=false']) {
+    assert.equal(classifyGmailProxyRequest(request + option, 'GET')?.operation, 'gmail_read');
+  }
+  for (const option of ['&includeSpamTrash=', '&includeSpamTrash=1', '&includeSpamTrash=anything',
+    '&includeSpamTrash=true&includeSpamTrash=false', '&includeSpamTrash=true&access_token=secret']) {
+    assert.equal(classifyGmailProxyRequest(request + option, 'GET'), null);
+  }
+  assert.equal(classifyGmailProxyRequest('/messages?maxResults=50&q=print&includeSpamTrash=true', 'GET'), null);
+  assert.equal(classifyGmailProxyRequest('/threads/id?format=full&includeSpamTrash=true', 'GET'), null);
+});
+
+test('Gmail history pagination accepts opaque base64 tokens without widening the allowed parameters', () => {
+  const path = `/history?${new URLSearchParams({ startHistoryId: '123', maxResults: '500', pageToken: 'opaque+/token==' })}`;
+  assert.equal(classifyGmailProxyRequest(path, 'GET')?.operation, 'gmail_read');
+  assert.equal(classifyGmailProxyRequest(`${path}&access_token=secret`, 'GET'), null);
+  assert.equal(classifyGmailProxyRequest(`/history?startHistoryId=123&maxResults=500&pageToken=${'x'.repeat(1025)}`, 'GET'), null);
+});
+
+test('Gmail list pagination accepts opaque tokens and validates endpoint-specific parameters', () => {
+  for (const endpoint of ['messages', 'threads']) {
+    const path = `/${endpoint}?${new URLSearchParams({ maxResults: '50', q: 'newer_than:30d print', pageToken: 'opaque+/token==' })}`;
+    assert.equal(classifyGmailProxyRequest(path, 'GET')?.operation, 'gmail_read');
+    assert.equal(classifyGmailProxyRequest(`${path}&includeSpamTrash=true`, 'GET')?.operation ?? null,
+      endpoint === 'threads' ? 'gmail_read' : null);
+    assert.equal(classifyGmailProxyRequest(`/${endpoint}?maxResults=50&q=print&pageToken=${'x'.repeat(1025)}`, 'GET'), null);
+  }
+});
+
+test('the web application can only delete legacy Google provider tokens', () => {
+  const clientSource = read('apps/hexforge/src/api/gmail/client.ts');
+  assert.doesNotMatch(clientSource, /localStorage\.setItem\s*\(/);
+  assert.doesNotMatch(clientSource, /localStorage\.getItem\s*\(/);
+  assert.doesNotMatch(clientSource, /captureGoogleProviderTokenFromUrl|syncGoogleProviderTokensFromSession/);
+  assert.doesNotMatch(clientSource, /oauth2\.googleapis\.com\/token/);
+  assert.match(clientSource, /localStorage\.removeItem\s*\(/);
+});
+
+test('Google token exchange and Gmail bearer use are confined to server functions', () => {
+  const edgeClientSource = read('apps/hexforge/src/api/edgeFunctions.ts');
+  assert.doesNotMatch(edgeClientSource, /refresh_token/);
+  assert.doesNotMatch(edgeClientSource, /gmail\.googleapis\.com/);
+
+  const proxySource = read('services/printing/supabase/functions/gmail-proxy/index.ts');
+  const credentialSource = read('services/printing/supabase/functions/_shared/gmail.ts');
+  assert.match(proxySource, /Authorization: `Bearer \$\{accessToken\}`/);
+  assert.match(credentialSource, /google-refresh-token/);
+  assert.match(credentialSource, /encryptSecret/);
+});
+
+test('credential tables are inaccessible to browser database roles', () => {
+  const migration = read('services/printing/supabase/migrations/20260731120000_server_owned_gmail_credentials.sql');
+  assert.match(migration, /revoke all on table public\.gmail_oauth_credentials from anon, authenticated/i);
+  assert.match(migration, /revoke all on table public\.gmail_oauth_states from anon, authenticated/i);
+  assert.doesNotMatch(migration, /create policy[\s\S]+gmail_oauth_credentials/i);
+  assert.match(migration, /trg_remove_gmail_credential_when_access_ends/i);
+});
+
+test('OAuth state is consumed with one atomic delete-and-return operation', () => {
+  const callbackSource = read('services/printing/supabase/functions/gmail-oauth-callback/index.ts');
+  assert.match(callbackSource, /gmail_oauth_states\?state_hash=eq\.\$\{stateHash\}/);
+  assert.match(callbackSource, /method: 'DELETE'/);
+  assert.match(callbackSource, /Prefer: 'return=representation'/);
+  assert.doesNotMatch(callbackSource, /provider_token|provider_refresh_token/);
+});
+
+test('credential encryption authenticates the owning user and supports key versions', async () => {
+  const key = Buffer.alloc(32, 7).toString('base64');
+  const previousDeno = (globalThis as { Deno?: unknown }).Deno;
+  (globalThis as { Deno?: unknown }).Deno = {
+    env: {
+      get: (name: string) => ({
+        GMAIL_TOKEN_ENCRYPTION_KEY: key,
+        GMAIL_TOKEN_ENCRYPTION_KEY_VERSION: '2'
+      } as Record<string, string>)[name]
+    }
+  };
+
+  try {
+    const { decryptSecret, encryptSecret } = await import('../../../../services/printing/supabase/functions/_shared/security.ts');
+    const encrypted = await encryptSecret('refresh-token-value', 'user-1:google-refresh-token');
+    assert.equal(encrypted.keyVersion, 2);
+    assert.notEqual(encrypted.ciphertext, 'refresh-token-value');
+    assert.equal(
+      await decryptSecret(encrypted, 'user-1:google-refresh-token'),
+      'refresh-token-value'
+    );
+    await assert.rejects(
+      decryptSecret(encrypted, 'user-2:google-refresh-token')
+    );
+  } finally {
+    (globalThis as { Deno?: unknown }).Deno = previousDeno;
+  }
+});

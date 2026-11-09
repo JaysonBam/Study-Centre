@@ -1,0 +1,1 @@
+Read `AGENTS.md`, `CONTRIBUTING.md` and `docs/web-architecture.md`. They contain the shared contributor instructions, source boundaries and verification commands used by both human and agent contributors.

@@ -1,0 +1,1 @@
+CREATE POLICY "Allow public read access to projects" ON public.projects FOR SELECT TO anon USING (true); CREATE POLICY "Allow public read access to parts" ON public.parts FOR SELECT TO anon USING (true);

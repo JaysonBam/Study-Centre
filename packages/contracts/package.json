@@ -1,0 +1,28 @@
+{
+  "name": "@study-centre/contracts",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./helper": {
+      "types": "./src/helper.ts",
+      "browser": "./src/helper.ts",
+      "import": "./dist/helper.js"
+    },
+    "./printing": {
+      "types": "./src/printing.ts",
+      "browser": "./src/printing.ts",
+      "import": "./dist/printing.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  },
+  "files": [
+    "dist"
+  ]
+}

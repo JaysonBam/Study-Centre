@@ -1,0 +1,252 @@
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #172033;
+  background: #f3f5f4;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  min-width: 320px;
+  background: #f3f5f4;
+}
+
+body {
+  min-width: 320px;
+  min-height: 100svh;
+  margin: 0;
+  background:
+    linear-gradient(180deg, rgba(231, 239, 237, 0.78) 0%, rgba(248, 250, 249, 0) 300px),
+    #f3f5f4;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+}
+
+img {
+  max-width: 100%;
+}
+
+#root {
+  min-height: 100svh;
+}
+
+.public-view-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  min-height: 100svh;
+  background:
+    radial-gradient(circle at 82% 4%, rgba(81, 133, 139, 0.14), transparent 300px),
+    linear-gradient(180deg, rgba(223, 235, 232, 0.88) 0, rgba(239, 244, 242, 0.78) 430px, rgba(243, 245, 244, 0) 700px);
+}
+
+.public-view-content {
+  position: relative;
+  z-index: 2;
+}
+
+.filament-backdrop {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.filament-backdrop svg {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.filament-backdrop path {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.filament-shadow {
+  stroke: rgba(34, 77, 89, 0.24);
+  stroke-width: 18;
+}
+
+.filament-core {
+  stroke: rgba(67, 129, 132, 0.8);
+  stroke-width: 10;
+}
+
+.content-surface {
+  position: relative;
+  z-index: 2;
+}
+
+.status-hero {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(190px, 22vw, 260px);
+  column-gap: clamp(1.25rem, 3vw, 3rem);
+  row-gap: clamp(0.7rem, 1.4vw, 1.1rem);
+  align-items: flex-start;
+  padding: 0 0 clamp(1.5rem, 3vw, 2.5rem);
+}
+
+.status-hero__copy {
+  position: relative;
+  z-index: 2;
+  min-width: 0;
+  padding-top: clamp(1rem, 2.2vw, 1.75rem);
+}
+
+.status-hero__eyebrow.MuiTypography-root {
+  margin: 0 0 0.55rem;
+  color: #315f72;
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.status-hero__title.MuiTypography-root {
+  max-width: 760px;
+  margin: 0;
+  color: #172033;
+  font-size: clamp(2.35rem, 6vw, 4.9rem);
+  font-weight: 950;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+
+.status-hero__description.MuiTypography-root {
+  max-width: 610px;
+  margin-top: 1rem;
+  color: #536171;
+  font-size: clamp(0.98rem, 1.4vw, 1.1rem);
+  line-height: 1.55;
+}
+
+.project-details {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0;
+  margin: 0;
+}
+
+.project-detail {
+  min-width: 0;
+  padding: 0 1rem;
+  border-left: 1px solid rgba(49, 95, 114, 0.24);
+}
+
+.project-detail:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+.project-detail dt.MuiTypography-root {
+  color: #73808d;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.project-detail dd.MuiTypography-root {
+  margin: 0.22rem 0 0;
+  color: #253545;
+  font-size: 0.9rem;
+  font-weight: 800;
+}
+
+.status-hero__lecturer.MuiTypography-root {
+  margin-top: 0.75rem;
+  color: #687684;
+  font-size: 0.8rem;
+}
+
+.hero-meta {
+  position: relative;
+  z-index: 2;
+  grid-column: 1 / -1;
+}
+
+.printer-mark {
+  position: relative;
+  z-index: 3;
+  width: 100%;
+  max-width: 260px;
+  justify-self: end;
+}
+
+.printer-mark__image {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.hero-progress {
+  position: relative;
+  z-index: 2;
+  grid-column: 1 / -1;
+  margin-top: 0.15rem;
+}
+
+@media (max-width: 700px) {
+  .status-hero {
+    grid-template-columns: minmax(0, 1fr) clamp(108px, 31vw, 132px);
+    column-gap: 0.75rem;
+    row-gap: 0.65rem;
+    padding-bottom: 1.35rem;
+  }
+
+  .status-hero__copy {
+    padding-top: 0.85rem;
+  }
+
+  .status-hero__title.MuiTypography-root {
+    max-width: 100%;
+    font-size: clamp(2rem, 10.5vw, 2.85rem);
+  }
+
+  .printer-mark {
+    width: 100%;
+  }
+
+  .project-details {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .project-detail {
+    padding: 0 0.45rem;
+  }
+
+  .project-detail dt.MuiTypography-root {
+    font-size: 0.56rem;
+    letter-spacing: 0.07em;
+  }
+
+  .project-detail dd.MuiTypography-root {
+    font-size: 0.73rem;
+    white-space: nowrap;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .filament-backdrop {
+    display: none;
+  }
+}

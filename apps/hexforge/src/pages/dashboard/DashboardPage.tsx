@@ -1,0 +1,403 @@
+import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
+import { Card } from '@/shared/ui/Card';
+import { PrintLocationBadge } from '@/shared/ui/PrintLocationBadge';
+import { useProjects } from '@/features/projects/context/ProjectContext';
+import {
+  buildDashboardLanes,
+  dashboardLaneMeta,
+  getPartCounts,
+  type DashboardLaneKey,
+} from '@/features/workflow/model/operations';
+import { requestGmailReadAccess } from '@/api/gmail/client';
+import { GmailThreadPicker } from '@/features/gmail/components/GmailThreadPicker';
+import { useGmailInbox } from '@/features/gmail/hooks/useGmailInbox';
+import { gmailInboxActionCount, refreshGmailInbox } from '@/features/gmail/state/gmailInboxStore';
+import { AlertTriangle, ExternalLink, RefreshCw, Search, Settings } from 'lucide-react';
+import gmailIcon from '@/shared/assets/icons/gmail.svg';
+
+const laneOrder: DashboardLaneKey[] = ['toBeConfirmed', 'readyToPrint', 'printing'];
+
+const laneEmptyCopy: Record<DashboardLaneKey, { title: string; description: string }> = {
+  toBeConfirmed: {
+    title: 'No projects',
+    description: 'New incoming print requests will appear here.',
+  },
+  readyToPrint: {
+    title: 'No projects',
+    description: 'Projects ready for slicing and assignment will appear here.',
+  },
+  printing: {
+    title: 'No projects',
+    description: 'Active print jobs will appear here.',
+  },
+};
+
+const projectMatchesSearch = (values: Array<string | undefined>, search: string) => {
+  const normalizedSearch = search.trim().toLowerCase();
+  if (!normalizedSearch) return true;
+
+  return values.some((value) => value?.toLowerCase().includes(normalizedSearch));
+};
+
+export const Dashboard = () => {
+  const navigate = useNavigate();
+  const { projectSummaries: projects, projectsLoading, projectsLoadError } = useProjects();
+  const [search, setSearch] = useState('');
+  const [isEmailModalOpen, setIsEmailModalOpen] = useState(false);
+  const visibleProjects = useMemo(
+    () =>
+      projects.filter((project) =>
+        projectMatchesSearch(
+          [project.id, project.studentName, project.studentNumber, project.course, project.lecturer],
+          search,
+        ),
+      ),
+    [projects, search],
+  );
+
+  const lanes = useMemo(() => buildDashboardLanes(visibleProjects), [visibleProjects]);
+
+  const totals = useMemo(() => {
+    const operationalProjects = projects.filter(
+      (project) =>
+        project.state !== 'CLOSED' &&
+        project.state !== 'CANCELLED' &&
+        project.state !== 'READY_FOR_COLLECTION' &&
+        project.state !== 'PARTIALLY_COLLECTED',
+    );
+    const allParts = operationalProjects.flatMap((project) => project.parts);
+
+    return {
+      totalParts: allParts.length,
+      inQueue: allParts.filter((part) => part.printStatus === 'READY' || part.printStatus === 'VERIFIED')
+        .length,
+      printing: allParts.filter((part) => part.printStatus === 'PRINTING').length,
+      printed: allParts.filter((part) => ['PRINTED', 'POST_PROCESSING'].includes(part.printStatus)).length,
+    };
+  }, [projects]);
+
+  return (
+    <div className="flex min-h-0 w-full flex-1 flex-col gap-5">
+      <section className="flex flex-col gap-3">
+        <div className="grid gap-3 lg:grid-cols-2 lg:items-stretch">
+          <div className="relative flex min-w-0 items-center">
+            <Search
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-sky-600 dark:text-sky-400"
+              size={17}
+            />
+            <input
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search project code, student, module, lecturer"
+              className="forge-command-input min-h-12 w-full pl-10 pr-3 text-sm font-semibold"
+            />
+          </div>
+
+          <EmailReminderCard
+            onOpen={() => setIsEmailModalOpen(true)}
+            onRefresh={() => void refreshGmailInbox()}
+            onReconnect={requestGmailReadAccess}
+          />
+        </div>
+
+        <div className="grid w-full grid-cols-2 gap-2 xl:grid-cols-4">
+          <CompactMetric
+            label="Total Plates"
+            value={totals.totalParts}
+            tone="text-slate-950 dark:text-slate-100"
+          />
+          <CompactMetric label="In Queue" value={totals.inQueue} tone="text-amber-700 dark:text-amber-300" />
+          <CompactMetric
+            label="Printing"
+            value={totals.printing}
+            tone="text-indigo-700 dark:text-indigo-300"
+          />
+          <CompactMetric
+            label="Printed"
+            value={totals.printed}
+            tone="text-emerald-700 dark:text-emerald-300"
+          />
+        </div>
+      </section>
+
+      <section className="grid min-h-0 flex-1 gap-4 xl:auto-rows-fr xl:grid-cols-3">
+        {laneOrder.map((laneKey) => {
+          const lane = dashboardLaneMeta[laneKey];
+          const laneProjects = lanes[laneKey];
+
+          return (
+            <div key={laneKey} className={lane.tone}>
+              <div className="forge-lane-header flex items-center justify-between gap-3 px-4 py-3">
+                <h2 className="text-[0.8rem] font-black uppercase tracking-[0.14em] text-slate-800 dark:text-slate-200">
+                  {lane.title === 'Ready for Printing' ? 'Ready To Print' : lane.title}
+                </h2>
+                <span className="forge-lane-count">{laneProjects.length}</span>
+              </div>
+
+              <div className="min-h-0 flex-1 space-y-2 overflow-y-auto p-3">
+                {projectsLoading ? (
+                  <DashboardLaneSkeleton />
+                ) : laneProjects.length === 0 ? (
+                  <LaneEmptyState laneKey={laneKey} />
+                ) : (
+                  laneProjects.map((project) => (
+                    <ProjectRow
+                      key={project.id}
+                      project={project}
+                      onOpen={() => navigate(`/project/${project.id}`)}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      {!projectsLoading && projectsLoadError && (
+        <div className="rounded-lg border border-rose-300 dark:border-rose-800 bg-rose-100 dark:bg-rose-950/55 px-4 py-3 text-sm font-bold text-rose-900 dark:text-rose-200">
+          {projectsLoadError}
+        </div>
+      )}
+
+      <GmailThreadPicker
+        open={isEmailModalOpen}
+        actionMode
+        onClose={() => setIsEmailModalOpen(false)}
+        onSelect={(item) => navigate('/project/new', { state: { gmailThreadId: item.threadId } })}
+        onOpenProject={(id) => navigate(`/project/${id}`)}
+      />
+    </div>
+  );
+};
+
+const SkeletonBar = ({ className = '' }: { className?: string }) => (
+  <div className={`forge-skeleton rounded ${className}`} />
+);
+
+const DashboardLaneSkeleton = () => (
+  <div className="space-y-3">
+    {Array.from({ length: 3 }).map((_, index) => (
+      <Card
+        key={index}
+        className="border-slate-200 dark:border-slate-700 bg-white dark:bg-[var(--forge-panel)] px-4 py-3"
+      >
+        <div className="flex items-start gap-4">
+          <SkeletonBar className="h-10 w-16" />
+          <div className="min-w-0 flex-1">
+            <SkeletonBar className="h-6 w-2/3" />
+            <SkeletonBar className="mt-2 h-3 w-1/2" />
+          </div>
+        </div>
+        <SkeletonBar className="mt-5 h-16 w-full" />
+      </Card>
+    ))}
+  </div>
+);
+
+const LaneEmptyState = ({ laneKey }: { laneKey: DashboardLaneKey }) => {
+  const copy = laneEmptyCopy[laneKey];
+
+  return (
+    <div className="forge-lane-empty flex min-h-[24rem] flex-col items-center justify-center px-6 py-10 text-center">
+      <Settings size={64} strokeWidth={1.35} className="text-slate-200" />
+      <div className="mt-7 text-lg font-black text-slate-900 dark:text-slate-100">{copy.title}</div>
+      <p className="mt-3 max-w-[16rem] text-sm font-semibold leading-7 text-slate-500 dark:text-slate-400">
+        {copy.description}
+      </p>
+    </div>
+  );
+};
+
+const formatEmailReminderTime = (checkedAt?: string) => {
+  if (!checkedAt) return 'Not yet';
+
+  const date = new Date(checkedAt);
+  if (Number.isNaN(date.getTime())) return 'Not yet';
+
+  return date.toLocaleTimeString([], {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+};
+
+const EmailReminderCard = ({
+  onOpen,
+  onRefresh,
+  onReconnect,
+}: {
+  onOpen: () => void;
+  onRefresh: () => void;
+  onReconnect: () => void;
+}) => {
+  // Email body progress must not rerender every project on the swim lanes.
+  const reminder = useGmailInbox();
+  const count = reminder.verified ? gmailInboxActionCount(reminder) : null;
+  const isRefreshing = reminder.isRefreshing;
+  const isAuthBlocked = reminder.status === 'auth';
+  const isError = reminder.status === 'error';
+  const refreshedAt = formatEmailReminderTime(reminder.checkedAt || undefined);
+  const emailSummaryText =
+    count === null && !isAuthBlocked && !isError
+      ? 'Checking emails needing action'
+      : isAuthBlocked || isError
+        ? reminder.error || 'Could not check Gmail.'
+        : `${count} ${count === 1 ? 'email needs' : 'emails need'} action`;
+  const emailActionLabel = isAuthBlocked ? 'Grant access' : isError ? 'Retry' : 'View emails';
+
+  return (
+    <div
+      className={`flex min-h-12 flex-col gap-2 rounded-lg border px-3 py-2 text-left shadow-sm sm:flex-row sm:items-center sm:justify-between ${
+        isAuthBlocked || isError
+          ? 'border-rose-300 dark:border-rose-800 bg-rose-50 dark:bg-rose-950/40'
+          : 'forge-metric'
+      }`}
+    >
+      <div className="flex w-full min-w-0 flex-1 items-center gap-3 text-left sm:w-auto">
+        <img src={gmailIcon} alt="" className="h-8 w-8 shrink-0" />
+        <div className="min-w-0">
+          <div
+            className={`truncate text-sm font-bold ${
+              isAuthBlocked || isError
+                ? 'text-rose-900 dark:text-rose-200'
+                : 'text-slate-950 dark:text-slate-100'
+            }`}
+          >
+            {emailSummaryText}
+          </div>
+          <div className="mt-0.5 text-xs font-semibold text-slate-500 dark:text-slate-400">
+            Last check: {refreshedAt}
+          </div>
+        </div>
+      </div>
+
+      <div className="flex w-full shrink-0 items-center justify-between gap-1.5 sm:w-auto sm:justify-end">
+        {isAuthBlocked || isError ? (
+          <button
+            type="button"
+            onClick={() => {
+              if (isAuthBlocked) {
+                onReconnect();
+              } else {
+                onRefresh();
+              }
+            }}
+            className="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-md border border-rose-300 dark:border-rose-800 bg-white dark:bg-[var(--forge-panel)] px-2.5 py-1.5 text-xs font-bold text-rose-800 dark:text-rose-200 transition hover:bg-rose-100 dark:hover:bg-rose-950/55 sm:flex-none"
+          >
+            <AlertTriangle size={16} />
+            {emailActionLabel}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onOpen}
+            className="inline-flex min-h-8 flex-1 items-center justify-center gap-1.5 rounded-md border border-sky-500/30 bg-white dark:bg-[var(--forge-panel)] px-2.5 py-1.5 text-xs font-bold text-sky-700 dark:text-sky-300 transition hover:bg-sky-50 dark:hover:bg-sky-950/40 sm:flex-none"
+            aria-label="View emails needing action"
+          >
+            View emails
+            <ExternalLink size={14} />
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={onRefresh}
+          disabled={isRefreshing}
+          className="rounded-full p-1 text-slate-500 dark:text-slate-400 transition hover:bg-white dark:hover:bg-[var(--forge-panel)] hover:text-sky-700 dark:hover:text-sky-300 disabled:cursor-wait disabled:opacity-60"
+          aria-label="Refresh emails needing action"
+        >
+          <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const CompactMetric = ({ label, value, tone }: { label: string; value: number; tone: string }) => (
+  <div className="forge-metric flex min-h-12 items-baseline gap-2 px-3.5 py-2.5 text-left">
+    <div className={`text-2xl font-black leading-none ${tone}`}>{value}</div>
+    <div className="text-xs font-semibold uppercase tracking-[0.12em] text-slate-600 dark:text-slate-400">
+      {label}
+    </div>
+  </div>
+);
+
+const ProjectRow = ({
+  project,
+  onOpen,
+}: {
+  project: ReturnType<typeof useProjects>['projectSummaries'][number];
+  onOpen: () => void;
+}) => {
+  const counts = getPartCounts(project);
+
+  return (
+    <Card
+      className="forge-work-card group cursor-pointer px-3 py-3 transition hover:-translate-y-0.5 hover:border-[color:var(--forge-gold-border)] hover:shadow-md"
+      onClick={onOpen}
+    >
+      <div className="flex items-start gap-3">
+        <div className="forge-priority-large shrink-0 px-2 py-1.5 text-[1.2rem] font-black leading-none text-slate-950 dark:text-slate-100">
+          #{project.priorityNumber}
+        </div>
+
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-[0.98rem] font-black leading-tight text-slate-950 dark:text-slate-100">
+            {project.studentName || 'Unnamed Project'}
+          </h3>
+          <p className="mt-1 truncate text-xs font-semibold tracking-[0.04em] text-slate-500 dark:text-slate-400">
+            {project.studentNumber || 'No student number'} {project.course ? `- ${project.course}` : ''}
+          </p>
+        </div>
+        <PrintLocationBadge label={project.printLabel} className="mt-0.5 max-w-[35%] shrink-0" />
+      </div>
+
+      <div className="mt-4 grid min-h-[3.55rem] grid-cols-4 overflow-hidden rounded-lg border border-slate-200 dark:border-slate-700 bg-white dark:bg-[var(--forge-panel)]">
+        <StatusCell
+          label={counts.total === 1 ? 'Part' : 'Parts'}
+          value={counts.total}
+          tone="text-sky-700 dark:text-sky-300"
+        />
+        <StatusCell
+          label="Queue"
+          value={counts.ready}
+          tone="text-amber-700 dark:text-amber-300"
+          withDivider
+        />
+        <StatusCell
+          label="Printing"
+          value={counts.printing}
+          tone="text-indigo-700 dark:text-indigo-300"
+          withDivider
+        />
+        <StatusCell
+          label="Printed"
+          value={counts.printed}
+          tone="text-emerald-700 dark:text-emerald-300"
+          withDivider
+        />
+      </div>
+    </Card>
+  );
+};
+
+const StatusCell = ({
+  label,
+  value,
+  tone,
+  withDivider = false,
+}: {
+  label: string;
+  value: number;
+  tone: string;
+  withDivider?: boolean;
+}) => (
+  <div
+    className={`flex flex-col items-center justify-center px-1.5 py-1.5 text-center ${withDivider ? 'border-l border-slate-200 dark:border-slate-700' : ''}`}
+  >
+    <div className={`text-[1.35rem] font-black leading-none ${tone}`}>{value}</div>
+    <div className="mt-1 text-[0.56rem] font-black uppercase tracking-[0.1em] text-slate-500 dark:text-slate-400">
+      {label}
+    </div>
+  </div>
+);

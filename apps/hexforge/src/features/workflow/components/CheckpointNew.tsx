@@ -1,0 +1,426 @@
+import type { Project } from '@/api/projectTypes';
+import { Button } from '@/shared/ui/Button';
+import { Card, CardContent, CardHeader } from '@/shared/ui/Card';
+import {
+  FILAMENT_SOURCE_VALUES,
+  filamentSourceLabel,
+  normalizeFilamentSource,
+} from '@/features/settings/model/filamentSource.ts';
+import { GmailThreadPicker } from '@/features/gmail/components/GmailThreadPicker';
+import { isSupportedGmailAttachment } from '@/features/gmail/model/gmailParsing';
+import type { GmailThreadListItem } from '@/api/gmail/types';
+import { openGmailThread } from '@/api/gmail/urls';
+import { GMAIL_THREAD_ACCOUNT_MISMATCH } from '@/features/gmail/hooks/gmailThreadAccess';
+import { ExternalLink, Mail, Paperclip, Unlink } from 'lucide-react';
+import { useProjectIntake } from '../hooks/useProjectIntake';
+
+export function CheckpointNew(props: { project?: Project; initialGmailThread?: GmailThreadListItem }) {
+  const { project } = props;
+  const {
+    modules,
+    canUseGmail,
+    formData,
+    setFormData,
+    errors,
+    setErrors,
+    gmailPickerOpen,
+    setGmailPickerOpen,
+    selectedGmailThread,
+    gmailLinking,
+    saving,
+    applySelectedThread,
+    unlinkThread,
+    handleChange,
+    handleSave,
+    defaultInputClassName,
+    errorInputClassName,
+    sectionClassName,
+  } = useProjectIntake(props);
+  return (
+    <Card className="overflow-hidden">
+      <form
+        id={project ? undefined : 'new-project-form'}
+        onSubmit={(event) => {
+          event.preventDefault();
+          void handleSave();
+        }}
+      >
+        <CardHeader className="border-b border-slate-300 dark:border-slate-700 bg-gradient-to-r from-slate-100 dark:from-slate-900 via-white dark:via-slate-800 to-sky-50 dark:to-sky-950/40">
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+            <div className="space-y-2">
+              <h2 className="text-2xl font-black tracking-tight text-slate-950 dark:text-slate-100">
+                {project ? 'Project Details' : 'New Project Details'}
+              </h2>
+            </div>
+            {project && (
+              <div className="flex flex-wrap justify-end gap-2">
+                <Button
+                  onClick={handleSave}
+                  size="lg"
+                  className="min-w-[180px]"
+                  loading={saving}
+                  loadingText="Creating Project…"
+                >
+                  Save Details
+                </Button>
+              </div>
+            )}
+          </div>
+        </CardHeader>
+
+        <CardContent className="forge-mechanical-lines space-y-8 bg-slate-100/70 dark:bg-slate-900/70 p-5 md:p-6">
+          <section className={sectionClassName}>
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-black text-slate-950 dark:text-slate-100">Main Gmail Thread</h3>
+                <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  Optional. One Gmail conversation can be linked to this project.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {(selectedGmailThread || project?.gmailThreadId) && (
+                  <span
+                    className="inline-flex"
+                    title={!selectedGmailThread && !canUseGmail ? GMAIL_THREAD_ACCOUNT_MISMATCH : undefined}
+                  >
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                      onClick={() =>
+                        openGmailThread(selectedGmailThread?.threadId || project!.gmailThreadId!)
+                      }
+                      disabled={!selectedGmailThread && !canUseGmail}
+                    >
+                      <ExternalLink size={14} /> Open Thread in Gmail
+                    </Button>
+                  </span>
+                )}
+                {project?.gmailThreadId && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="gap-2 text-rose-700 dark:text-rose-300"
+                    onClick={() => void unlinkThread()}
+                    disabled={gmailLinking}
+                  >
+                    <Unlink size={14} /> Unlink
+                  </Button>
+                )}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-2"
+                  onClick={() => setGmailPickerOpen(true)}
+                  disabled={gmailLinking}
+                >
+                  <Mail size={14} />{' '}
+                  {project?.gmailThreadId
+                    ? 'Replace Main Gmail Thread'
+                    : selectedGmailThread
+                      ? 'Choose another thread'
+                      : project
+                        ? 'Link Main Gmail Thread'
+                        : 'Import from Gmail'}
+                </Button>
+              </div>
+            </div>
+            {selectedGmailThread || project?.gmailThreadId ? (
+              <div className="rounded-lg border border-sky-300 dark:border-sky-800 bg-sky-50 dark:bg-sky-950/40 p-4">
+                <p className="text-xs font-black uppercase tracking-[0.12em] text-sky-800 dark:text-sky-200">
+                  Linked Main Gmail Thread
+                </p>
+                <p className="mt-1 text-sm font-black text-slate-950 dark:text-slate-100">
+                  {selectedGmailThread?.subject || project?.gmailThreadSubject || '(no subject)'}
+                </p>
+                <p className="mt-1 text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  Main contact:{' '}
+                  {selectedGmailThread?.snapshot.mainContactEmail ||
+                    project?.gmailMainContactEmail ||
+                    'Not detected'}
+                </p>
+                {selectedGmailThread &&
+                  (() => {
+                    const filenames = selectedGmailThread.snapshot.messages
+                      .flatMap((message) => message.attachments)
+                      .filter((attachment) => isSupportedGmailAttachment(attachment.filename))
+                      .map((attachment) => attachment.filename);
+                    return filenames.length > 0 ? (
+                      <div className="mt-3 flex flex-wrap gap-1.5">
+                        {filenames.map((filename, index) => (
+                          <span
+                            key={`${filename}-${index}`}
+                            className="forge-badge inline-flex items-center gap-1 px-2 py-1 text-[10px]"
+                          >
+                            <Paperclip size={11} /> {filename}
+                          </span>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                        No STL or 3MF attachments found in this thread.
+                      </p>
+                    );
+                  })()}
+              </div>
+            ) : (
+              <p className="rounded-md border border-dashed border-slate-300 dark:border-slate-700 bg-white dark:bg-[var(--forge-panel)] px-4 py-3 text-xs font-semibold text-slate-500 dark:text-slate-400">
+                No Main Gmail Thread linked.
+              </p>
+            )}
+          </section>
+          <section className={sectionClassName}>
+            <div className="space-y-1">
+              <h3 className="text-lg font-black text-slate-950 dark:text-slate-100">Student Information</h3>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-2">
+              <div className="space-y-2">
+                <label htmlFor="studentName" className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  Student Name
+                </label>
+                <input
+                  id="studentName"
+                  type="text"
+                  name="studentName"
+                  value={formData.studentName}
+                  onChange={handleChange}
+                  className={errors.studentName ? errorInputClassName : defaultInputClassName}
+                  placeholder="Enter full name"
+                />
+                {errors.studentName && (
+                  <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                    {errors.studentName}
+                  </p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="studentNumber"
+                  className="text-sm font-bold text-slate-800 dark:text-slate-200"
+                >
+                  Student Number
+                </label>
+                <input
+                  id="studentNumber"
+                  type="text"
+                  name="studentNumber"
+                  value={formData.studentNumber}
+                  onChange={(e) => {
+                    handleChange(e);
+                    setErrors((prev) => ({ ...prev, studentNumber: '', email: '' }));
+                  }}
+                  className={errors.studentNumber ? errorInputClassName : defaultInputClassName}
+                  placeholder="12345678"
+                  inputMode="numeric"
+                  maxLength={8}
+                />
+                {errors.studentNumber && (
+                  <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                    {errors.studentNumber}
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="grid gap-5 md:grid-cols-[minmax(0,1.4fr)_minmax(220px,0.6fr)]">
+              <div className="space-y-2">
+                <label htmlFor="email" className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  Email Address
+                </label>
+                <input
+                  id="email"
+                  type="email"
+                  name="email"
+                  value={formData.email}
+                  onChange={(e) => {
+                    handleChange(e);
+                    setErrors((prev) => ({ ...prev, email: '' }));
+                  }}
+                  className={errors.email ? errorInputClassName : defaultInputClassName}
+                  placeholder="student@example.com"
+                  autoComplete="email"
+                />
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  Will be auto-filled when student number is filled.
+                </p>
+                {errors.email && (
+                  <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">{errors.email}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="priorityNumber"
+                  className="text-sm font-bold text-slate-800 dark:text-slate-200"
+                >
+                  Priority Number
+                </label>
+                <input
+                  id="priorityNumber"
+                  type="number"
+                  name="priorityNumber"
+                  min={1}
+                  value={formData.priorityNumber}
+                  onChange={(e) => {
+                    handleChange(e);
+                    setErrors((prev) => ({ ...prev, priorityNumber: '' }));
+                  }}
+                  className={errors.priorityNumber ? errorInputClassName : defaultInputClassName}
+                />
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-400">
+                  Defaults to the next saved queue number, but stays editable.
+                </p>
+                {errors.priorityNumber && (
+                  <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">
+                    {errors.priorityNumber}
+                  </p>
+                )}
+              </div>
+            </div>
+          </section>
+
+          <section className={sectionClassName}>
+            <div className="space-y-1">
+              <h3 className="text-lg font-black text-slate-950 dark:text-slate-100">Academic Details</h3>
+            </div>
+
+            <div className="grid gap-5 lg:grid-cols-3">
+              <div className="space-y-2">
+                <label htmlFor="course" className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  Course
+                </label>
+                <input
+                  id="course"
+                  type="text"
+                  name="course"
+                  list="courseOptions"
+                  value={formData.course}
+                  onChange={handleChange}
+                  aria-invalid={Boolean(errors.course)}
+                  className={defaultInputClassName}
+                  placeholder="Select or type a module code"
+                />
+                <datalist id="courseOptions">
+                  {modules.map((m) => (
+                    <option key={m.id} value={m.code}>
+                      {m.lecturer}
+                    </option>
+                  ))}
+                </datalist>
+                {errors.course && (
+                  <p className="text-xs font-semibold text-rose-600 dark:text-rose-400">{errors.course}</p>
+                )}
+              </div>
+
+              <div className="space-y-2">
+                <label htmlFor="lecturer" className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  Lecturer
+                </label>
+                <input
+                  id="lecturer"
+                  type="text"
+                  name="lecturer"
+                  list="lecturerOptions"
+                  value={formData.lecturer}
+                  onChange={handleChange}
+                  className={defaultInputClassName}
+                  placeholder="Select or type a lecturer name"
+                />
+                <datalist id="lecturerOptions">
+                  {Array.from(new Set(modules.map((m) => m.lecturer))).map((lecturer) => (
+                    <option key={lecturer} value={lecturer} />
+                  ))}
+                </datalist>
+              </div>
+
+              <div className="space-y-2">
+                <label
+                  htmlFor="defaultFilamentSource"
+                  className="text-sm font-bold text-slate-800 dark:text-slate-200"
+                >
+                  Default Filament Source
+                </label>
+                <select
+                  id="defaultFilamentSource"
+                  name="defaultFilamentSource"
+                  value={formData.defaultFilamentSource}
+                  onChange={(event) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      defaultFilamentSource: normalizeFilamentSource(event.target.value),
+                    }))
+                  }
+                  className={defaultInputClassName}
+                >
+                  {FILAMENT_SOURCE_VALUES.map((source) => (
+                    <option key={source} value={source}>
+                      {filamentSourceLabel(source)}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          </section>
+
+          <section className={sectionClassName}>
+            <div className="space-y-1">
+              <h3 className="text-lg font-black text-slate-950 dark:text-slate-100">Payment Detail</h3>
+              <p className="text-sm font-semibold text-slate-700 dark:text-slate-300"></p>
+            </div>
+
+            <div className="grid gap-4 lg:grid-cols-2">
+              <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-slate-100 dark:bg-slate-900 px-4 py-4 shadow-sm transition-colors hover:border-[color:var(--forge-gold-border)] hover:bg-sky-50 dark:hover:bg-sky-950/40">
+                <div className="space-y-1">
+                  <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">
+                    Module/Lecturer Pays
+                  </span>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={formData.moduleOrLecturerPays}
+                  onChange={(e) =>
+                    setFormData((prev) => ({
+                      ...prev,
+                      moduleOrLecturerPays: e.target.checked,
+                      needsPayment: !e.target.checked,
+                    }))
+                  }
+                  className="mt-1 h-4 w-4 rounded border-slate-400 dark:border-slate-600 text-sky-700 dark:text-sky-300"
+                />
+              </label>
+
+              {!formData.moduleOrLecturerPays ? (
+                <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-[var(--forge-panel)] px-4 py-4 shadow-sm transition-colors hover:border-[color:var(--forge-gold-border)] hover:bg-sky-50 dark:hover:bg-sky-950/40">
+                  <div className="space-y-1">
+                    <span className="block text-sm font-bold text-slate-900 dark:text-slate-100">
+                      Student payment required
+                    </span>
+                  </div>
+                  <input
+                    type="checkbox"
+                    checked={formData.needsPayment}
+                    onChange={(e) => setFormData((prev) => ({ ...prev, needsPayment: e.target.checked }))}
+                    className="mt-1 h-4 w-4 rounded border-slate-400 dark:border-slate-600 text-sky-700 dark:text-sky-300"
+                  />
+                </label>
+              ) : (
+                <div className="flex items-start rounded-lg border border-emerald-300 dark:border-emerald-800 bg-emerald-100 dark:bg-emerald-950/55 px-4 py-4 text-sm text-emerald-950 dark:text-emerald-200 shadow-sm">
+                  <div>
+                    <p className="font-bold">Student payment disabled</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
+        </CardContent>
+        <GmailThreadPicker
+          open={gmailPickerOpen}
+          onClose={() => setGmailPickerOpen(false)}
+          onSelect={(item) => void applySelectedThread(item)}
+        />
+      </form>
+    </Card>
+  );
+}
