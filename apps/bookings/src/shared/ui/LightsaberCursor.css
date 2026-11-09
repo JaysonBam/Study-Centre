@@ -1,0 +1,30 @@
+.lightsaber-cursor {
+  display: none;
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 48px;
+  height: 48px;
+  pointer-events: none;
+  z-index: 2147483647;
+}
+
+.lightsaber-cursor img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  body[data-lightsaber-active],
+  body[data-lightsaber-active] * {
+    cursor: none !important;
+  }
+
+  body[data-lightsaber-active] input,
+  body[data-lightsaber-active] textarea,
+  body[data-lightsaber-active] [contenteditable='true'],
+  body[data-lightsaber-active] [contenteditable='true'] * {
+    cursor: text !important;
+  }
+}

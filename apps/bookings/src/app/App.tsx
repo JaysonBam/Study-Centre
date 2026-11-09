@@ -20,6 +20,7 @@ import TermsOfServicePage from '@/pages/terms-of-service/TermsPage';
 
 import Sidebar from './layout/Sidebar';
 import Header from '@/shared/ui/Header';
+import LightsaberCursor from '@/shared/ui/LightsaberCursor';
 import { LayoutProvider, useLayout } from '@/shared/context/LayoutContext';
 import { hasProfileAccess } from '@/features/access/model/accessExpiry';
 
@@ -186,6 +187,7 @@ function App() {
   return (
     <CustomThemeProvider>
       <LayoutProvider>
+        <LightsaberCursor />
         <Routes>
           <Route path="/" element={<Navigate to="/login" replace />} />
           <Route path="/login" element={<LoginPage />} />
